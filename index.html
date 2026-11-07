@@ -294,6 +294,16 @@ function clearSignature(){ctx.clearRect(0,0,canvas.width,canvas.height)}
 $("date").value=new Date().toLocaleDateString("en-CA");
 addFinding();
 </script>
+ 
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(() => console.log("Offline support enabled"))
+      .catch(error => console.error("Offline setup failed:", error));
+  });
+}
+</script> 
 </body>
 </html>
 
