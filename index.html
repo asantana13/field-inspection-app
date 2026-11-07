@@ -1,1 +1,299 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#173653">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Field Inspection</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;background:#edf1f5;color:#182b3b;margin:0}
+header{background:#173653;color:white;padding:18px;text-align:center}
+h1{font-size:23px;margin:0}
+header p{margin:5px 0 0}
+main{max-width:800px;margin:auto;padding:14px}
+section{background:white;border-radius:12px;padding:17px;margin-bottom:15px}
+h2{font-size:19px;margin:0 0 14px}
+label{display:block;font-weight:600;margin:12px 0 5px}
+input,textarea,select{width:100%;font:inherit;padding:12px;border:1px solid #b5c1cc;border-radius:8px;background:white}
+textarea{min-height:100px}
+button{font:inherit;border:0;border-radius:9px;padding:13px;margin:5px 4px 5px 0;background:#1769aa;color:white;font-weight:600}
+button.secondary{background:#526678}
+button.danger{background:#a32b35}
+button:disabled{opacity:.5}
+.item{border:1px solid #cbd4dc;border-radius:9px;padding:12px;margin:12px 0}
+.item img{max-width:100%;max-height:320px;object-fit:contain;border-radius:8px;margin:8px 0}
+small{color:#536574}
+#signature{width:100%;height:160px;border:2px solid #9caebe;border-radius:8px;touch-action:none;background:white}
+@media print{
+body{background:white}
+header{color:black;background:white}
+main{max-width:none}
+section{break-inside:avoid;border:1px solid #ddd}
+.no-print{display:none!important}
+input,textarea,select{border:0;padding:4px}
+.item{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<header>
+<h1>Field Inspection</h1>
+<p>Inspection & Photo Documentation</p>
+</header>
+<main>
+<section>
+<h2>Inspection Information</h2>
+<label>Inspection Title</label>
+<input id="title" placeholder="Building inspection">
+<label>Location / Address</label>
+<input id="location">
+<label>Customer / Company</label>
+<input id="customer">
+<label>Inspector</label>
+<input id="inspector">
+<label>Date</label>
+<input type="date" id="date">
+<label>General Notes</label>
+<textarea id="notes" placeholder="Inspection overview"></textarea>
+</section>
+
+<section>
+<h2>Inspection Findings</h2>
+<div id="findings"></div>
+<button class="no-print" onclick="addFinding()">+ Add Finding</button>
+<p><small>Add descriptions, status, and photos for each finding.</small></p>
+</section>
+
+<section>
+<h2>Customer Signature</h2>
+<canvas id="signature"></canvas>
+<div class="no-print">
+<button class="secondary" onclick="clearSignature()">Clear Signature</button>
+</div>
+<label>Customer Name</label>
+<input id="signedBy">
+</section>
+
+<section class="no-print">
+<h2>Save & Report</h2>
+<button onclick="saveInspection()">Save Inspection</button>
+<button onclick="window.print()">Print / Save PDF</button>
+<button class="secondary" onclick="exportBackup()">Export Backup</button>
+<button class="secondary" onclick="newInspection()">New Inspection</button>
+<label>Saved Inspections</label>
+<select id="savedList"></select>
+<button onclick="loadSelected()">Open Saved Inspection</button>
+<p id="message" role="status"></p>
+<p><small>Data is stored on this device. Export backups regularly. Do not clear Safari website data without a backup.</small></p>
+</section>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let db,currentId=null,signatureData="";
+const fields=["title","location","customer","inspector","date","notes","signedBy"];
+const openReq=indexedDB.open("FieldInspectionDB",1);
+openReq.onupgradeneeded=e=>{
+const d=e.target.result;
+d.createObjectStore("inspections",{keyPath:"id"});
+};
+openReq.onsuccess=e=>{
+db=e.target.result;
+refreshList();
+};
+openReq.onerror=()=>msg("Database unavailable. Saving may not work.");
+
+function msg(t){$("message").textContent=t}
+function store(mode="readonly"){
+return db.transaction("inspections",mode).objectStore("inspections");
+}
+function addFinding(data={}){
+const div=document.createElement("div");
+div.className="item";
+div.innerHTML=`
+<label>Item / Area</label>
+<input class="area" placeholder="Area or equipment">
+<label>Condition</label>
+<select class="status">
+<option>Pass</option>
+<option>Needs Attention</option>
+<option>Not Applicable</option>
+</select>
+<label>Description / Findings</label>
+<textarea class="description" placeholder="Describe what you observed"></textarea>
+<label>Recommended Action</label>
+<textarea class="action" placeholder="Work needed or follow-up"></textarea>
+<div class="photos"></div>
+<div class="no-print">
+<label>Add Photo</label>
+<input class="photoInput" type="file" accept="image/*" multiple>
+<button class="danger remove" type="button">Remove Finding</button>
+</div>`;
+$("findings").appendChild(div);
+div.querySelector(".area").value=data.area||"";
+div.querySelector(".status").value=data.status||"Pass";
+div.querySelector(".description").value=data.description||"";
+div.querySelector(".action").value=data.action||"";
+div.querySelector(".remove").onclick=()=>div.remove();
+div.querySelector(".photoInput").onchange=async e=>{
+for(const file of e.target.files){
+try{
+const url=await resizeImage(file);
+addPhoto(div,url);
+}catch(err){alert("Could not read photo");}
+}
+e.target.value="";
+};
+(data.photos||[]).forEach(p=>addPhoto(div,p));
+}
+function addPhoto(div,src){
+const wrap=document.createElement("div");
+wrap.className="photo";
+const img=document.createElement("img");
+img.src=src;
+img.alt="Inspection photograph";
+const del=document.createElement("button");
+del.className="danger no-print";
+del.textContent="Remove Photo";
+del.onclick=()=>wrap.remove();
+wrap.append(img,del);
+div.querySelector(".photos").append(wrap);
+}
+function resizeImage(file){
+return new Promise((resolve,reject)=>{
+const reader=new FileReader();
+reader.onerror=reject;
+reader.onload=()=>{
+const img=new Image();
+img.onerror=reject;
+img.onload=()=>{
+const max=1400,scale=Math.min(1,max/Math.max(img.width,img.height));
+const c=document.createElement("canvas");
+c.width=Math.round(img.width*scale);
+c.height=Math.round(img.height*scale);
+c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+resolve(c.toDataURL("image/jpeg",.75));
+};
+img.src=reader.result;
+};
+reader.readAsDataURL(file);
+});
+}
+function collect(){
+const data={id:currentId||String(Date.now()),updated:new Date().toISOString()};
+fields.forEach(id=>data[id]=$(id).value);
+data.findings=[...document.querySelectorAll(".item")].map(div=>({
+area:div.querySelector(".area").value,
+status:div.querySelector(".status").value,
+description:div.querySelector(".description").value,
+action:div.querySelector(".action").value,
+photos:[...div.querySelectorAll(".photo img")].map(i=>i.src)
+}));
+data.signature=$("signature").toDataURL("image/png");
+return data;
+}
+function saveInspection(){
+if(!db)return alert("Database not ready");
+const data=collect();
+currentId=data.id;
+const r=store("readwrite").put(data);
+r.onsuccess=()=>{msg("Inspection saved");refreshList()};
+r.onerror=()=>msg("Save failed. Storage may be full.");
+}
+function refreshList(){
+if(!db)return;
+const r=store().getAll();
+r.onsuccess=()=>{
+const list=$("savedList");
+list.replaceChildren();
+r.result.sort((a,b)=>b.updated.localeCompare(a.updated)).forEach(d=>{
+const opt=document.createElement("option");
+opt.value=d.id;
+opt.textContent=(d.title||"Untitled")+" — "+(d.date||"No date");
+list.append(opt);
+});
+};
+}
+function loadSelected(){
+const id=$("savedList").value;
+if(!id)return;
+const r=store().get(id);
+r.onsuccess=()=>{
+const d=r.result;
+if(!d)return;
+currentId=d.id;
+fields.forEach(id=>$(id).value=d[id]||"");
+$("findings").replaceChildren();
+(d.findings||[]).forEach(addFinding);
+if(!d.findings?.length)addFinding();
+const img=new Image();
+img.onload=()=>{
+clearSignature();
+ctx.drawImage(img,0,0,canvas.width,canvas.height);
+};
+if(d.signature)img.src=d.signature;
+else clearSignature();
+msg("Inspection opened");
+window.scrollTo(0,0);
+};
+}
+function newInspection(){
+if(!confirm("Start a new inspection? Save your current work first."))return;
+currentId=null;
+fields.forEach(id=>$(id).value="");
+$("date").value=new Date().toLocaleDateString("en-CA");
+$("findings").replaceChildren();
+addFinding();
+clearSignature();
+msg("New inspection");
+}
+function exportBackup(){
+const data=collect();
+const blob=new Blob([JSON.stringify(data)],{type:"application/json"});
+const a=document.createElement("a");
+a.href=URL.createObjectURL(blob);
+a.download="inspection-"+data.id+".json";
+a.click();
+setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+const canvas=$("signature");
+const ctx=canvas.getContext("2d");
+function setupCanvas(){
+canvas.width=canvas.clientWidth*devicePixelRatio;
+canvas.height=160*devicePixelRatio;
+ctx.scale(devicePixelRatio,devicePixelRatio);
+ctx.lineWidth=2.5;
+ctx.lineCap="round";
+ctx.strokeStyle="#152b40";
+}
+setupCanvas();
+let drawing=false;
+function pos(e){
+const r=canvas.getBoundingClientRect();
+return{x:e.clientX-r.left,y:e.clientY-r.top};
+}
+canvas.addEventListener("pointerdown",e=>{
+drawing=true;
+canvas.setPointerCapture(e.pointerId);
+const p=pos(e);
+ctx.beginPath();
+ctx.moveTo(p.x,p.y);
+});
+canvas.addEventListener("pointermove",e=>{
+if(!drawing)return;
+const p=pos(e);
+ctx.lineTo(p.x,p.y);
+ctx.stroke();
+});
+canvas.addEventListener("pointerup",()=>drawing=false);
+canvas.addEventListener("pointercancel",()=>drawing=false);
+function clearSignature(){ctx.clearRect(0,0,canvas.width,canvas.height)}
+$("date").value=new Date().toLocaleDateString("en-CA");
+addFinding();
+</script>
+</body>
+</html>
+
