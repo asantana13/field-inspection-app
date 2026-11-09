@@ -200,7 +200,12 @@ if(!db)return alert("Database not ready");
 const data=collect();
 currentId=data.id;
 const r=store("readwrite").put(data);
-r.onsuccess=()=>{msg("Inspection saved");refreshList()};
+
+r.onsuccess = () => {
+  msg("Inspection Saved — You can continue editing.");
+  refreshList();
+};
+
 r.onerror=()=>msg("Save failed. Storage may be full.");
 }
 function refreshList(){
